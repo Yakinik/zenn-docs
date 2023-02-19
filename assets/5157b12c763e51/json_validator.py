@@ -3,9 +3,9 @@ import json
 import jsonschema
 import sys
 
-# テスト基準となるJSONスキーマ
+# JSON Schema
 schema = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$schema": "http://json-schema.org/schema#",
     "type": "object",
     "properties": {
         "period": {"type": "string"},
@@ -26,23 +26,30 @@ schema = {
     "required": ["period", "artist", "trackList"]
 }
 
-# Zipファイル内の全てのJSONファイルに対して実行
-with zipfile.ZipFile(sys.argv[1], 'r') as z:
-    for filename in z.namelist():
-        # JSONファイルのみ対象
-        if not filename.endswith('.json'):
+# Zipファイル内を再帰的に探す関数
+
+
+def search_zip(zip, path):
+    for name in zip.namelist():
+        # フォルダはスキップ
+        if name.endswith('/'):
             continue
-
-        # JSONファイルを読み込み
-        with z.open(filename) as f:
+        # JSONファイルかチェック
+        if name.endswith('.json'):
             try:
-                data = json.load(f)
-            except json.JSONDecodeError as e:
-                print(f'{filename}: JSONDecodeError: {e}')
-                continue
+                # JSONを読み込んでスキーマチェック
+                with zip.open(name) as f:
+                    data = json.load(f)
+                    jsonschema.validate(data, schema)
+            except (json.JSONDecodeError, jsonschema.exceptions.ValidationError) as e:
+                # エラー内容を表示
+                if hasattr(e, 'path'):
+                    print(f'{path}/{name} [{e.path}]: {e}')
+                else:
+                    print(f'{path}/{name}: {e}')
 
-        # スキーマと比較
-        try:
-            jsonschema.validate(instance=data, schema=schema)
-        except jsonschema.exceptions.ValidationError as e:
-            print(f'{filename} [{e.relative_path[0]}]: {e}')
+
+# Zipファイルを指定されたパスから読み込み
+zip_path = sys.argv[1]
+with zipfile.ZipFile(zip_path) as zip:
+    search_zip(zip, zip_path)
